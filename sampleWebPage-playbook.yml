@@ -1,0 +1,77 @@
+---
+- name: Install and configuring Apache web server
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Installing Apache2
+      apt:
+        name: apache2
+        state: present
+
+    - name: Start Apache service
+      service:
+        name: apache2
+        state: started
+
+    - name: Enable Apache service
+      service:
+        name: apache2
+        enabled: true
+
+    - name: Creating a sample Hello World web page
+      copy:
+        content: "<html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>
+        dest: /var/www/html/index.html
+
+    - name: Installing OpenSSL
+      apt:
+        name: openssl
+        state: present
+
+    - name: Generating SSL certificate
+      command: openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt -subj "/C=US/ST=CA/L=SanFrancisco/O=MyOrg/OU=MyUnit/CN=myserver.local"
+
+    - name: Configuring Apache with SSL
+      copy:
+        src: apache_ssl.conf
+        dest: /etc/apache2/conf-available/
+      notify: Reload Apache
+
+    - name: Enabling Apache SSL configuration
+      command: a2enconf apache_ssl
+
+    - name: Redirecting HTTP to HTTPS
+      copy:
+        src: apache_redirect.conf
+        dest: /etc/apache2/conf-available/
+      notify: Reload Apache
+
+    - name: Enabling Apache redirection
+      command: a2enconf apache_redirect
+
+  handlers:
+    - name: Reloading Apache
+      service:
+        name: apache2
+        state: reloaded
+
+- name: Run automated test scripts
+  hosts: webservers
+  gather_facts: false
+  vars:
+    test_url: "https://localhost"
+    expected_status_code: "200"
+  tasks:
+    - name: Testing web server is running
+      uri:
+        url: "{{ test_url }}"
+        method: GET
+        return_content: yes
+        status_code: "{{ expected_status_code }}"
+      register: test_result
+
+    - name: Asserting that the web server is running
+      assert:
+        that:
+          - test_result.status == expected_status_code
